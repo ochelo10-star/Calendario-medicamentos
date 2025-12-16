@@ -1,0 +1,5 @@
+{
+  "name": "MediTrack Pro",
+  "description": "Una aplicación de seguimiento de medicación de alta fidelidad con modo oscuro, gestión de calendario y recordatorios inteligentes.",
+  "requestFramePermissions": []
+}
