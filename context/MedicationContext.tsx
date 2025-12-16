@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Medication, MedicationLog, UserSettings } from '../types';
+import { Medication, MedicationLog, UserSettings, GoogleAccount } from '../types';
 import { INITIAL_MEDICATIONS, DEFAULT_SETTINGS } from '../constants';
+
+// Helper to generate consistent local YYYY-MM-DD keys
+export const getDateKey = (date: Date) => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
 
 interface MedicationContextType {
   medications: Medication[];
@@ -9,10 +14,13 @@ interface MedicationContextType {
   addMedication: (med: Omit<Medication, 'id'>) => void;
   updateMedication: (id: string, med: Partial<Medication>) => void;
   deleteMedication: (id: string) => void;
-  logDose: (medicationId: string, scheduledTime: string, status: 'taken' | 'skipped') => void;
+  logDose: (medicationId: string, scheduledTime: string, status: 'taken' | 'skipped', date?: Date) => void;
   getDailyProgress: (date: Date) => number;
   getMedicationLogsForDate: (medId: string, date: Date) => MedicationLog | undefined;
   updateSettings: (newSettings: Partial<UserSettings>) => void;
+  loginGoogle: (selectedAccount: GoogleAccount) => Promise<void>;
+  logoutGoogle: () => void;
+  syncWithCalendar: () => Promise<void>;
 }
 
 const MedicationContext = createContext<MedicationContextType | undefined>(undefined);
@@ -77,8 +85,80 @@ export const MedicationProvider = ({ children }: { children?: ReactNode }) => {
     setSettings(prev => ({ ...prev, ...newSettings }));
   };
 
-  const logDose = (medicationId: string, scheduledTime: string, status: 'taken' | 'skipped') => {
-    const dateKey = new Date().toISOString().split('T')[0];
+  // Google Login Logic
+  const loginGoogle = async (selectedAccount: GoogleAccount) => {
+      // Simulate API delay
+      return new Promise<void>((resolve) => {
+          setTimeout(() => {
+              setSettings(prev => ({
+                  ...prev,
+                  googleAccount: selectedAccount,
+                  calendarPreferences: {
+                      ...prev.calendarPreferences,
+                      enabled: true
+                  }
+              }));
+              resolve();
+          }, 1500);
+      });
+  };
+
+  const logoutGoogle = () => {
+      setSettings(prev => ({
+          ...prev,
+          googleAccount: undefined,
+          lastSync: undefined,
+          calendarPreferences: {
+              ...prev.calendarPreferences,
+              enabled: false
+          }
+      }));
+  };
+
+  const syncWithCalendar = async () => {
+    if (!settings.googleAccount) return;
+    
+    // Simulation of a full sync process with network logs
+    console.group('🔄 Google Calendar Sync Process');
+    console.log(`%cAuthenticating as: ${settings.googleAccount.email}`, 'color: #4285F4; font-weight: bold;');
+    console.log(`%cTarget Calendar: ${settings.calendarPreferences.calendarId}`, 'color: #34A853;');
+    
+    const overrides = settings.calendarPreferences.reminders ? {
+        useDefault: false,
+        overrides: [
+            { method: settings.calendarPreferences.reminderMethod, minutes: settings.calendarPreferences.reminderMinutes }
+        ]
+    } : { useDefault: true };
+
+    // Simulate batch request
+    console.log('Sending Batch Request to https://www.googleapis.com/batch/calendar/v3...');
+    
+    medications.forEach(med => {
+        med.times.forEach(time => {
+             console.log(`%c[POST] Event: ${med.name} @ ${time}`, 'color: #FBBC05', {
+                 summary: `Toma: ${med.name} ${med.dosage}${med.unit}`,
+                 reminders: overrides,
+                 start: { dateTime: `T${time}:00` }
+             });
+        });
+    });
+
+    // Simulate network delay
+    await new Promise<void>(resolve => setTimeout(resolve, 2000));
+    
+    console.log('%cSync Complete. 200 OK', 'color: #34A853; font-weight: bold;');
+    console.groupEnd();
+
+    setSettings(prev => ({
+        ...prev,
+        lastSync: Date.now()
+    }));
+  };
+
+  const logDose = (medicationId: string, scheduledTime: string, status: 'taken' | 'skipped', date?: Date) => {
+    const targetDate = date || new Date();
+    const dateKey = getDateKey(targetDate);
+
     const newLog: MedicationLog = {
       id: crypto.randomUUID(),
       medicationId,
@@ -88,7 +168,7 @@ export const MedicationProvider = ({ children }: { children?: ReactNode }) => {
       dateKey
     };
     
-    // Check if already logged for this specific slot today
+    // Check if already logged for this specific slot on the specific date
     const exists = logs.find(l => 
       l.medicationId === medicationId && 
       l.dateKey === dateKey && 
@@ -120,10 +200,25 @@ export const MedicationProvider = ({ children }: { children?: ReactNode }) => {
     } else {
         setLogs(prev => [...prev, newLog]);
     }
+
+    // --- Google Calendar Mock Integration ---
+    if (settings.calendarPreferences.enabled && settings.googleAccount) {
+        const medName = medications.find(m => m.id === medicationId)?.name || 'Medicación';
+        
+        console.group('📅 Google Calendar Event Update');
+        console.log(`%cUser: ${settings.googleAccount.email}`, 'color: #4285F4');
+        console.log(`PATCH https://www.googleapis.com/calendar/v3/calendars/${settings.calendarPreferences.calendarId}/events/...`);
+        console.log(`Payload: { status: '${status}', colorId: '${status === 'taken' ? '10' : '11'}' }`);
+        console.groupEnd();
+        
+        if (settings.calendarPreferences.reminders) {
+            // Logic regarding reminders
+        }
+    }
   };
 
   const getDailyProgress = (date: Date): number => {
-    const dateKey = date.toISOString().split('T')[0];
+    const dateKey = getDateKey(date);
     let totalDoses = 0;
     
     medications.forEach(med => {
@@ -137,7 +232,7 @@ export const MedicationProvider = ({ children }: { children?: ReactNode }) => {
   };
 
   const getMedicationLogsForDate = (medId: string, date: Date) => {
-    const dateKey = date.toISOString().split('T')[0];
+    const dateKey = getDateKey(date);
     return logs.find(l => l.medicationId === medId && l.dateKey === dateKey);
   };
 
@@ -152,7 +247,10 @@ export const MedicationProvider = ({ children }: { children?: ReactNode }) => {
       logDose,
       getDailyProgress,
       getMedicationLogsForDate,
-      updateSettings
+      updateSettings,
+      loginGoogle,
+      logoutGoogle,
+      syncWithCalendar
     }}>
       {children}
     </MedicationContext.Provider>

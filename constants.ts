@@ -15,13 +15,21 @@ export const MOCK_USER = {
 
 export const DEFAULT_SETTINGS: UserSettings = {
   patientName: 'Carlos',
-  syncGoogleCalendar: false,
-  defaultCalendar: 'Personal',
+  googleAccount: undefined,
+  calendarPreferences: {
+      enabled: false,
+      calendarId: 'primary',
+      autoSync: true,
+      reminders: true,
+      reminderMethod: 'popup',
+      reminderMinutes: 10
+  },
   notificationsEnabled: true,
   sound: 'Campana',
   reminderMinutes: 15,
   theme: 'system',
-  defaultUnit: 'mg'
+  defaultUnit: 'mg',
+  lastSync: undefined
 };
 
 export const INITIAL_MEDICATIONS = [

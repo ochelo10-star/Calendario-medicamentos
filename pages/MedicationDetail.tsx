@@ -1,6 +1,6 @@
 import React from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { useMedication } from '../context/MedicationContext';
+import { useMedication, getDateKey } from '../context/MedicationContext';
 import { ChevronLeft, Pill, Check, Clock, Calendar, RefreshCw, Trash2, ArchiveRestore } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -8,7 +8,7 @@ const MedicationDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { medications, deleteMedication, logs } = useMedication();
+  const { medications, deleteMedication, logs, logDose } = useMedication();
   
   const med = medications.find(m => m.id === id);
 
@@ -29,6 +29,36 @@ const MedicationDetail = () => {
 
   // Calculate history for this med
   const medLogs = logs.filter(l => l.medicationId === med.id).sort((a,b) => b.timestamp - a.timestamp);
+
+  const handleTakeNextDose = () => {
+      const today = new Date();
+      const todayKey = getDateKey(today);
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      
+      // Find the first dose of today that hasn't been taken
+      // Simple logic: find first time slot not in logs for today
+      // Or if all are taken, maybe don't allow? Or just log the next one in sequence even if passed?
+      
+      const sortedTimes = [...med.times].sort();
+      
+      // Find first one not taken
+      const nextTime = sortedTimes.find(time => {
+          return !logs.find(l => 
+              l.medicationId === med.id && 
+              l.dateKey === todayKey && 
+              l.scheduledTime === time && 
+              l.status === 'taken'
+          );
+      });
+
+      if (nextTime) {
+          logDose(med.id, nextTime, 'taken', today);
+          alert(`Dosis de las ${nextTime} marcada como tomada.`);
+      } else {
+          alert('Ya has registrado todas las dosis de hoy para este medicamento.');
+      }
+  };
 
   return (
     <div className="min-h-screen bg-background-light dark:bg-background-dark text-slate-900 dark:text-white pb-10 flex flex-col">
@@ -69,7 +99,10 @@ const MedicationDetail = () => {
             {/* Actions */}
             <div className="px-4 mb-8">
                 <div className="flex gap-3">
-                    <button className="flex-1 h-12 flex items-center justify-center gap-2 rounded-2xl bg-primary hover:bg-primary-dark active:scale-[0.98] transition-all shadow-lg shadow-primary/20 text-[#112116]">
+                    <button 
+                        onClick={handleTakeNextDose}
+                        className="flex-1 h-12 flex items-center justify-center gap-2 rounded-2xl bg-primary hover:bg-primary-dark active:scale-[0.98] transition-all shadow-lg shadow-primary/20 text-[#112116]"
+                    >
                         <Check size={20} strokeWidth={3} />
                         <span className="text-sm font-bold tracking-wide">Marcar Tomado</span>
                     </button>

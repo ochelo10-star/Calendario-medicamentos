@@ -1,52 +1,92 @@
-import React, { useState } from 'react';
-import { useMedication } from '../context/MedicationContext';
+import React, { useState, useMemo } from 'react';
+import { useMedication, getDateKey } from '../context/MedicationContext';
 import { ChevronLeft, ChevronRight, RefreshCw, Pill, Calendar as CalendarIcon, Activity, Check } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 
 const Calendar = () => {
-  const { medications, logs, logDose } = useMedication();
+  const { medications, logs, logDose, getDailyProgress } = useMedication();
   const [currentDate, setCurrentDate] = useState(new Date());
   const navigate = useNavigate();
 
-  // Generate calendar grid
+  // Generate calendar grid inputs
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
-  
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 is Sunday
-
-  const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-  const paddingArray = Array.from({ length: firstDayOfMonth }, (_, i) => i);
-
   const monthName = currentDate.toLocaleString('es-ES', { month: 'long' });
   const capitalizedMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
+  // Memoize grid arrays to prevent unnecessary recalculations
+  const { daysArray, paddingArray } = useMemo(() => {
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 is Sunday
+      return {
+          daysArray: Array.from({ length: daysInMonth }, (_, i) => i + 1),
+          paddingArray: Array.from({ length: firstDayOfMonth }, (_, i) => i)
+      };
+  }, [year, month]);
+
+  // Memoize the grid rendering to react specifically to log changes
+  const calendarGrid = useMemo(() => {
+    return daysArray.map(day => {
+        const isSelected = day === currentDate.getDate();
+        const cellDate = new Date(year, month, day);
+        const progress = getDailyProgress(cellDate);
+        const hasData = progress > 0;
+        const isComplete = progress === 100;
+        
+        return (
+          <button 
+            key={day} 
+            onClick={() => setCurrentDate(new Date(year, month, day))}
+            className={clsx(
+              "relative flex flex-col items-center justify-center aspect-square text-sm rounded-full transition-all",
+              isSelected ? "font-bold text-background-dark" : "text-slate-500 dark:text-slate-400 font-medium hover:bg-white/5"
+            )}
+          >
+            {isSelected && (
+              <div className="absolute inset-1 bg-primary rounded-full shadow-[0_0_15px_rgba(25,230,94,0.4)] -z-10"></div>
+            )}
+            {day}
+            
+            {/* Real Data Indicators */}
+            {!isSelected && hasData && (
+                 <span className={clsx(
+                     "size-1.5 rounded-full absolute bottom-1.5 transition-colors",
+                     isComplete ? "bg-primary" : "bg-primary/40"
+                 )}></span>
+            )}
+          </button>
+        );
+      });
+  }, [daysArray, currentDate, logs, getDailyProgress, year, month]);
+
   // Daily List Logic
-  const todayKey = currentDate.toISOString().split('T')[0];
+  const selectedDateKey = getDateKey(currentDate);
   const selectedDateLabel = currentDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 
-  const dailyMeds = medications.flatMap(med => 
-    med.times.map(time => ({
-      medId: med.id,
-      name: med.name,
-      dosage: `${med.dosage}${med.unit}`,
-      time,
-      type: med.type,
-      instructions: med.instructions
-    }))
-  ).sort((a, b) => a.time.localeCompare(b.time));
+  const dailyMeds = useMemo(() => {
+      return medications.flatMap(med => 
+        med.times.map(time => ({
+          medId: med.id,
+          name: med.name,
+          dosage: `${med.dosage}${med.unit}`,
+          time,
+          type: med.type,
+          instructions: med.instructions
+        }))
+      ).sort((a, b) => a.time.localeCompare(b.time));
+  }, [medications]);
 
   const getLogStatus = (medId: string, time: string) => {
-    return logs.find(l => l.medicationId === medId && l.scheduledTime === time && l.dateKey === todayKey)?.status === 'taken';
+    return logs.find(l => l.medicationId === medId && l.scheduledTime === time && l.dateKey === selectedDateKey)?.status === 'taken';
   };
 
   const changeMonth = (offset: number) => {
     setCurrentDate(new Date(year, month + offset, 1));
   };
 
-  const setDay = (day: number) => {
-    setCurrentDate(new Date(year, month, day));
+  const goToToday = () => {
+    setCurrentDate(new Date());
   };
 
   return (
@@ -54,7 +94,11 @@ const Calendar = () => {
       {/* Header */}
       <header className="flex items-center justify-between px-6 pt-8 pb-4 bg-background-light dark:bg-background-dark z-10">
         <h2 className="text-2xl font-extrabold leading-tight tracking-tight text-slate-900 dark:text-white">Calendario</h2>
-        <button className="flex items-center justify-center p-2 rounded-full bg-surface-light dark:bg-surface-dark/50 text-primary hover:bg-surface-dark transition-colors border border-gray-200 dark:border-white/5">
+        <button 
+            onClick={goToToday}
+            className="flex items-center justify-center p-2 rounded-full bg-surface-light dark:bg-surface-dark/50 text-primary hover:bg-surface-dark transition-colors border border-gray-200 dark:border-white/5 active:scale-90 active:rotate-180 duration-300"
+            aria-label="Volver a hoy"
+        >
           <RefreshCw size={20} />
         </button>
       </header>
@@ -84,31 +128,7 @@ const Calendar = () => {
             {/* Grid Body */}
             <div className="grid grid-cols-7 gap-y-2">
               {paddingArray.map(i => <div key={`pad-${i}`} className="aspect-square"></div>)}
-              
-              {daysArray.map(day => {
-                const isSelected = day === currentDate.getDate();
-                const isToday = new Date().getDate() === day && new Date().getMonth() === month;
-                
-                return (
-                  <button 
-                    key={day} 
-                    onClick={() => setDay(day)}
-                    className={clsx(
-                      "relative flex flex-col items-center justify-center aspect-square text-sm rounded-full transition-all",
-                      isSelected ? "font-bold text-background-dark" : "text-slate-500 dark:text-slate-400 font-medium hover:bg-white/5"
-                    )}
-                  >
-                    {isSelected && (
-                      <div className="absolute inset-1 bg-primary rounded-full shadow-[0_0_15px_rgba(25,230,94,0.4)] -z-10"></div>
-                    )}
-                    {day}
-                    {/* Tiny dot for events (mock logic) */}
-                    {day % 3 === 0 && !isSelected && (
-                         <span className="w-1 h-1 bg-primary/50 rounded-full absolute bottom-1"></span>
-                    )}
-                  </button>
-                );
-              })}
+              {calendarGrid}
             </div>
           </div>
         </div>
@@ -159,7 +179,7 @@ const Calendar = () => {
                         <button 
                             onClick={(e) => {
                                 e.stopPropagation();
-                                logDose(item.medId, item.time, taken ? 'skipped' : 'taken');
+                                logDose(item.medId, item.time, taken ? 'skipped' : 'taken', currentDate);
                             }}
                             className={clsx(
                                 "flex items-center justify-center size-8 rounded-full border-2 transition-all",

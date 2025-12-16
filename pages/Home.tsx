@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useMedication } from '../context/MedicationContext';
+import { useMedication, getDateKey } from '../context/MedicationContext';
 import { MOCK_USER } from '../constants';
 import { Bell, RefreshCw, Activity, Calendar, Check, ArrowRight, Plus } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -25,6 +25,7 @@ const Home = () => {
 
     const now = new Date();
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const todayKey = getDateKey(now);
 
     medications.forEach(med => {
       med.times.forEach(time => {
@@ -34,7 +35,7 @@ const Home = () => {
         // Check log status
         const log = logs.find(l => 
           l.medicationId === med.id && 
-          l.dateKey === now.toISOString().split('T')[0] && 
+          l.dateKey === todayKey && 
           l.scheduledTime === time
         );
 
@@ -68,7 +69,7 @@ const Home = () => {
   const nextDose = timelineItems.find(item => item.status === 'pending' || (item.status === 'future' && !item.status.includes('taken')));
 
   const handleQuickTake = (medId: string, time: string) => {
-    logDose(medId, time, 'taken');
+    logDose(medId, time, 'taken', new Date());
   };
 
   return (
